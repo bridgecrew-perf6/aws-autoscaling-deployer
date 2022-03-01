@@ -15,8 +15,8 @@ const run = async () => {
     .description("CLI to deploy applications structured by aws auto scaling")
     .version("0.0.1");
 
-  program
-    .command("deploy")
+  const deploy = program.command("deploy");
+  deploy
     .description("start application deploy")
     .argument("<asg-name>", "auto scaling group name")
     .option("-hp, --healthy-percentage <number>", "healthy percentage configuration for instance refresh", 80)
@@ -25,18 +25,18 @@ const run = async () => {
     .option("-acc, --aws-account <string>", "aws account already saved", "default")
     .action(deployAction)
 
-  program
-    .command("add-acc")
+  const account = program.command("acc").description("manage aws accounts for deploy action");
+  account
+    .command("add")
     .description("add account keys for aws deploy")
     .option("-n, --name <string>", "aws account identifier")
     .requiredOption("-ak, --access-key <string>", "aws account access key")
     .requiredOption("-sk, --secret-key <string>", "aws account secret access key")
     .option("-r, --region <string>", "aws account default region", "us-west-2")
-    .option("-d, --default", "set current account as default for further actions")
     .action(addAccountAction);
 
-  program
-    .command("list-acc")
+  account
+    .command("ls")
     .description("list all aws configured accounts")
     .action(listAccountsAction);
 

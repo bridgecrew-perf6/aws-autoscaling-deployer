@@ -1,27 +1,25 @@
 import fs from "fs";
 import path from "path";
 import chalk from "chalk";
+import ConfigParser from "configparser";
 
+const config = new ConfigParser();
 const credentialsFilePath = path.join(".asgdeployer", ".credentials");
 
 const getCredential = (credentialIdentifier) => {
   try {
-    const credentials = fs.readFileSync(credentialsFilePath);
-    const jsonCredentials = JSON.parse(credentials.toString());
-
-    const credential = jsonCredentials.find((credential) => {
-      if(credentialIdentifier === "default") {
-        return credential.default;
-      }
-
-      return credential.identifier === credentialIdentifier;
-    });
-
-    if(!credential) {
+    config.read(credentialsFilePath);
+    const sections = config.sections();
+    if(!sections.some((section) => section === credentialIdentifier)) {
       throw new Error("Credential not found");
     }
 
-    return credential;
+    return {
+      identifier: credentialIdentifier,
+      accessKey: config.get(credentialIdentifier, "access_key"),
+      secretKey: config.get(credentialIdentifier, "secret_access_key"),
+      region: config.get(credentialIdentifier, "region")
+    };
     
   } catch(e) {
     return {
@@ -33,14 +31,20 @@ const getCredential = (credentialIdentifier) => {
 
 const listAccountsAction = () => {
   try {
-    const credentials = fs.readFileSync(credentialsFilePath);
-    const jsonCredentials = JSON.parse(credentials.toString());
+    try {
+      fs.readFileSync(credentialsFilePath);
+    } catch(e) {
+      console.log(chalk.green(`${ jsonCredentials.length } credentials added`));
+    }
+    
+    config.read(credentialsFilePath);
+    const sections = config.sections();
 
-    console.log(chalk.green(`${ jsonCredentials.length } credentials added`));
-    jsonCredentials.forEach((credential, index) => {
-      let message = `${ index } - identifier:${ credential.identifier }` 
-      message += ` access-key:[${ credential.accessKey.replace(/\S(?=\S{6})/g, "*") }]`;
-      message += credential.default ? " [DEFAULT]" : "";
+    console.log(chalk.green(`${ sections.length } credentials added`));
+    sections.forEach((section, index) => {
+      const accessKey = config.get(section, "access_key");
+      let message = `${ index } - identifier:${ section }`;
+      message += ` access-key:[${ accessKey.replace(/\S(?=\S{6})/g, "*") }]`;
 
       console.log(message);
     });
@@ -51,41 +55,25 @@ const listAccountsAction = () => {
 }
 
 const addAccountAction = (options) => {
-  let credentials = "[]";
-
   try {
-    credentials = fs.readFileSync(credentialsFilePath);
+    fs.readFileSync(credentialsFilePath);
   } catch(e) {
     fs.mkdirSync(path.dirname(credentialsFilePath), { recursive: true });
+    fs.writeFileSync(credentialsFilePath, "");
   }
-
-  const jsonCredentials = JSON.parse(credentials.toString());
-
-  const credentialIdentifierAlreadyExists = jsonCredentials.findIndex((credential) => {
-    return credential.identifier === options.name;
-  });
-  if(credentialIdentifierAlreadyExists !== -1) {
+  
+  config.read(credentialsFilePath);
+  const sections = config.sections();
+  if(sections.some((section) => section === options.name)) {
     console.log(`${ chalk.redBright("[Error]") } Already exists an aws account with this identifier`);
     return true;
   }
 
-  const credentialDefaultAlreadyExists = jsonCredentials.findIndex((credential) => {
-    return credential.default === options.default;
-  });
-  if(credentialDefaultAlreadyExists !== -1) {
-    console.log(`${ chalk.redBright("[Error]") } Already exists an aws account setted as default`);
-    return true;
-  }
-
-  jsonCredentials.push({
-    identifier: options.name,
-    accessKey: options.accessKey,
-    secretAccessKey: options.secretKey,
-    region: options.region,
-    default: Boolean(options.default)
-  });
-
-  fs.writeFileSync(credentialsFilePath, JSON.stringify(jsonCredentials));
+  config.addSection(options.name);
+  config.set(options.name, "access_key", options.accessKey);
+  config.set(options.name, "access_secret_key", options.secretKey);
+  config.set(options.name, "region", options.region);
+  config.write(credentialsFilePath);
 }
 
 export {

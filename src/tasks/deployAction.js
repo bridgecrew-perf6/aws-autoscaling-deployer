@@ -38,6 +38,10 @@ const deployAction = async (asgName, options) => {
                 AutoScalingGroupNames: [ ctx.arguments.asgName ] 
               }).promise();
 
+              if(autoScalingGroupsDescription.AutoScalingGroups.length < 1) {
+                throw new Error("This auto scaling group doesn't exist");
+              }
+
               const autoScalingGroup = autoScalingGroupsDescription.AutoScalingGroups[0];
               ctx.launchTemplateId = autoScalingGroup.LaunchTemplate.LaunchTemplateId;
               ctx.selectedInstanceId = autoScalingGroup.Instances.find((instance) => {
@@ -58,15 +62,14 @@ const deployAction = async (asgName, options) => {
             }
           }, {
             title: "detaching selected instance...",
-            task: async (subCtx, task) => {
-              await sleep(4000);
+            task: async (subCtx, task) => {              
+              const response = await autoScaling.detachInstances({
+                AutoScalingGroupName: ctx.arguments.asgName,
+                InstanceIds: [ ctx.selectedInstanceId ],
+                ShouldDecrementDesiredCapacity: false
+              }).promise();
+
               return true;
-              
-              // const response = await autoScaling.detachInstances({
-                //   AutoScalingGroupName: ctx.arguments.asgName,
-                //   InstanceIds: [ ctx.selectedInstanceId ],
-                //   ShouldDecrementDesiredCapacity: false
-                // }).promise();
             }
           }
         ])
@@ -78,13 +81,32 @@ const deployAction = async (asgName, options) => {
         }
       }, {
         title: "Creating ami and beginning instance refresh...",
-        task: async (ctx, task) => {
-          await sleep(5000);
-          return true;
-        }
+        task: async (ctx, task) => task.newListr([
+          {
+            title: "creating image based on modified instance...",
+            task: (subCtx, task) => {
+              const imageName = `${ ctx.arguments.asgName } v.${ new Date().getTime() }`;
+
+              await ec2.createImage({
+                Name: imageName,
+                ImageIds: [ ctx.selectedInstanceId ]
+              }).promise();
+            }
+          }, {
+            title: "creating new launch template version...",
+            task: (subCtx, task) => {}
+          }, {
+            title: "killing detached instance...",
+            task: (subCtx, task) => {}
+          }, {
+            title: "starting auto scaling instance refresh...",
+            task: (subCtx, task) => {}
+          }
+        ])
       }
     ], {
       concurrent: false,
+      exitOnError: true,
       rendererOptions: {
         collapse: false
       },
@@ -92,7 +114,11 @@ const deployAction = async (asgName, options) => {
     }
   );
 
-  await tasks.run();
+  try {
+    await tasks.run();    
+  } catch (e) {
+    // ...
+  }
 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
