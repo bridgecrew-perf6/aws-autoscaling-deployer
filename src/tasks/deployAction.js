@@ -84,7 +84,7 @@ const deployAction = async (asgName, options) => {
         task: async (ctx, task) => task.newListr([
           {
             title: "creating image based on modified instance...",
-            task: (subCtx, task) => {
+            task: async (subCtx, task) => {
               const imageName = `${ ctx.arguments.asgName } v.${ new Date().getTime() }`;
 
               await ec2.createImage({
