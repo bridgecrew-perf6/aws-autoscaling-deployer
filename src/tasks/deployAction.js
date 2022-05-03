@@ -76,6 +76,7 @@ const deployAction = async (asgName, options) => {
       }, {
         title: "Updating detached instance...",
         task: async (ctx, task) => {
+          // fazer a conexao ssh e dar os comandos para atualizar a maquina
           await sleep(3000);
           return true;
         }
@@ -87,20 +88,68 @@ const deployAction = async (asgName, options) => {
             task: async (subCtx, task) => {
               const imageName = `${ ctx.arguments.asgName } v.${ new Date().getTime() }`;
 
-              await ec2.createImage({
+              ctx.imageData = await ec2.createImage({
                 Name: imageName,
                 ImageIds: [ ctx.selectedInstanceId ]
               }).promise();
+
+              await ec2.waitFor('imageAvailable', {ImageIds: [ctx.imageData.ImageId]}).promise();
             }
           }, {
             title: "creating new launch template version...",
-            task: (subCtx, task) => {}
+            task: (subCtx, task) => {
+               await ec2.createLaunchTemplateVersion({
+                LaunchTemplateData: {
+                 ImageId: ctx.imageData.ImageId
+                }, 
+                LaunchTemplateId: ctx.launchTemplateId , 
+               }).promise();
+            }
           }, {
             title: "killing detached instance...",
-            task: (subCtx, task) => {}
+            task: (subCtx, task) => {
+              await ec2.terminateInstance({
+                InstanceIds: [ ctx.selectedInstanceId ]
+              }).promise();
+            }
           }, {
             title: "starting auto scaling instance refresh...",
-            task: (subCtx, task) => {}
+            task: (subCtx, task) => {
+              try{
+                await autoScaling.startInstanceRefresh({
+                  AutoScalingGroupName: ctx.arguments.asgName, 
+                  DesiredConfiguration: {
+                  LaunchTemplate: {
+                    LaunchTemplateName: `${ ctx.arguments.asgName } v.${ new Date().getTime() }`, 
+                    Version: "$Latest"
+                  }
+                  }, 
+                  Preferences: {
+                  InstanceWarmup: ctx.arguments.instanceWarmup, 
+                  MinHealthyPercentage: ctx.arguments.healthyPercentage, 
+                  SkipMatching: false
+                  }
+                }).promise();
+              } catch(erro) {
+                 await autoScaling.cancelInstanceRefresh({
+                  AutoScalingGroupName: ctx.arguments.asgName
+                 }).promise();
+                 await autoScaling.startInstanceRefresh({
+                  AutoScalingGroupName: ctx.arguments.asgName, 
+                  DesiredConfiguration: {
+                  LaunchTemplate: {
+                    LaunchTemplateName: `${ ctx.arguments.asgName } v.${ new Date().getTime() }`, 
+                    Version: "$Latest"
+                  }
+                  }, 
+                  Preferences: {
+                  InstanceWarmup: ctx.arguments.instanceWarmup, 
+                  MinHealthyPercentage: ctx.arguments.healthyPercentage, 
+                  SkipMatching: false
+                  }
+                }).promise();
+              }
+            }
           }
         ])
       }
